@@ -1,5 +1,5 @@
-% reformatting_200
-% reformatting_1000
+% _reformatting_200
+% _reformatting_1000
 % hopefully my stuff is formatted correctly yikes
 
 subjList = {'A_405', 'A_408', 'B_110', 'B_309', 'B_311', 'B_316', 'C_204', 'C_429', 'E_321', 'E_415', 'E_429',...
@@ -12,6 +12,7 @@ for i=1:19
     EEG = pop_loadset('filename',strcat(subj, '_19.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\'));
     chanlocs = EEG.chanlocs;
     
+    %filter data
     %filter data
     EEG = pop_eegfiltnew(EEG, 'locutoff', 0.5);
     
