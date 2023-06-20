@@ -1,5 +1,5 @@
-% reformatting_200
-% reformatting_1000
+% _reformatting_200
+% _reformatting_1000
 % hopefully my stuff is formatted correctly yikes
 
 subjList = {'A_405', 'A_408', 'B_110', 'B_309', 'B_311', 'B_316', 'C_204', 'C_429', 'E_321', 'E_415', 'E_429',...
