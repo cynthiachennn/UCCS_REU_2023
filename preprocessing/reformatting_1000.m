@@ -1,7 +1,9 @@
-fileList = {'5F-A-405.mat', '5F-B-110.mat', '5F-B-316.mat', '5F-C-204.mat' '5F-F-027.mat', '5F-F-209.mat'};
-subjList = {'A_405', 'B_110', 'B_316', 'C_204', 'F_027', 'F_209'};
-% sizes: {718600, 724600, 718800, 722200, 736600, 718400}
-for i=1:6
+fileList = {'5F-A-408-HFREQ.mat', '5F-B-309-HFREQ.mat', '5F-B-311-HFREQ.mat', '5F-C-429-HFREQ.mat',...
+    '5F-E-321-HFREQ.mat', '5F-E-415-HFREQ.mat', '5F-E-429-HFREQ.mat', '5F-F-210-HFREQ.mat',...
+'5F-G-413-HFREQ.mat', '5F-G-428-HFREQ.mat', '5F-H-804-HFREQ.mat', '5F-I-719-HFREQ.mat', '5F-I-723-HFREQ.mat'};
+subjList = {'A_408', 'B_309', 'B_311', 'C_429', 'E_321', 'E_415', 'E_429', 'F_210', 'G_413', 'G_428', 'H_804', 'I_719', 'I_723'};
+% sizes: {3595000, 
+for i=1:13
     fileName = cell2mat(fileList(i));
     subj = cell2mat(subjList(i));
 
@@ -12,9 +14,9 @@ for i=1:6
     subj_marker = subj_o.marker';
     [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
     
-    EEG = pop_importdata('dataformat','array','nbchan',22,'data','subj_data','srate',200,'pnts',size(subj_data,2),'xmin',0);
+    EEG = pop_importdata('dataformat','array','nbchan',22,'data','subj_data','srate',1000,'pnts',size(subj_data,2),'xmin',0);
     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 0,'setname','data','gui','off'); 
-    EEG = pop_importdata('dataformat','array','nbchan',1,'data','subj_marker','srate',200,'pnts',size(subj_marker,2),'xmin',0);
+    EEG = pop_importdata('dataformat','array','nbchan',1,'data','subj_marker','srate',1000,'pnts',size(subj_marker,2),'xmin',0);
     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'setname','events','gui','off'); 
     EEG = pop_chanevent(EEG, 1,'edge','leading','edgelen',0,'delchan','off'); %getting events
     [ALLEEG EEG] = eeg_store(ALLEEG, EEG, CURRENTSET);
@@ -23,6 +25,7 @@ for i=1:6
     EEG = pop_importevent( EEG, 'event',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\events.txt'),'fields',{'number','latency','type','urevent'},'skipline',1,'timeunit',NaN);
     EEG.chanlocs = struct('labels', { 'Fp1' 'Fp2' 'F3' 'F4' 'C3' 'C4' 'P3' 'P4' 'O1' 'O2' 'A1' 'A2' 'F7' 'F8' 'T7' 'T8' 'P7' 'P8' 'Fz' 'Cz' 'Pz' 'X3'});
     EEG = pop_chanedit(EEG, 'load', '22ch.loc'); %add locations
+    EEG = pop_resample( EEG, 200); % resample as 200 Hz
     EEG = pop_saveset( EEG, 'filename',strcat(subj,'.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\'));
     [ALLEEG EEG] = eeg_store(ALLEEG, EEG, CURRENTSET); %this saves basic 22 ch w/ events and locs 200 hz file 
 
@@ -33,39 +36,46 @@ for i=1:6
     %remove xtra channels
     [ALLEEG, EEG, CURRENTSET] = eeg_store( ALLEEG, EEG, 0 );
     %removeChans = {'X3'}; 
-    EEG = pop_select( EEG, 'rmchannel', {'X3'}); %REMOVE EVENT CHANNEL WITHOUT CREATING EVENTS 
+    EEG = pop_select( EEG, 'rmchannel', {'X3', 'A1', 'A2'}); %REMOVE EVENT CHANNEL WITHOUT CREATING EVENTS 
     [ALLEEG EEG] = eeg_store(ALLEEG, EEG, CURRENTSET);
-    EEG = pop_reref( EEG, [20 21] ); %rereference/get rid of mastoid for now
+    % EEG = pop_reref( EEG, [20 21] ); %rereference/get rid of mastoid for now
     
     %new, reformatted set! :D
     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'setname','reref','gui','off'); %make a new set out of it i guessss
     EEG = pop_saveset( EEG, 'filename',strcat(subj, '_19.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\'));
 
 end
+
 % 
 % function reformatting(fileName, subj)
-%     % FOR ONE SUBJECT!
-%     % get info
+%     %FOR ONE SUBJECT!
+%     %get info
 %     subj_o = load(fileName).o;
 %     subj_data = subj_o.data';
 %     subj_marker = subj_o.marker';
+%     size(subj_data, 2)
+%     size(subj_marker, 2)
 %     [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
 % 
-%     EEG = pop_importdata('dataformat','array','nbchan',22,'data','subj_data','srate',200,'pnts',size(subj_data,2),'xmin',0);
+%     %load_file %uncomment if not saved as set yet;
+%     EEG = pop_importdata('dataformat','array','nbchan',22,'data','subj_data','srate',1000,'pnts',size(subj_data,2),'xmin',0);
 %     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 0,'setname','data','gui','off'); 
-%     EEG = pop_importdata('dataformat','array','nbchan',1,'data','subj_marker','srate',200,'pnts',size(subj_marker,2),'xmin',0);
+%     EEG = pop_importdata('dataformat','array','nbchan',1,'data','subj_marker','srate',1000,'pnts',size(subj_marker,2),'xmin',0);
 %     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'setname','events','gui','off'); 
-%     EEG = pop_chanevent(EEG, 1,'edge','leading','edgelen',0,'delchan','off'); %getting events
+%     EEG = pop_chanevent(EEG, 1,'edge','leading','edgelen',0,'delchan','off'); % getting events
 %     [ALLEEG EEG] = eeg_store(ALLEEG, EEG, CURRENTSET);
 %     pop_expevents(EEG, strcat('C:\Users\Owner\Documents\MATLAB\REU data\5F EEG data\events', subj, '.txt'), 'samples');
 %     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 2,'retrieve',1,'study',0); 
 %     EEG = pop_importevent( EEG, 'event',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\events', subj, '.txt'),'fields',{'number','latency','type','urevent'},'skipline',1,'timeunit',NaN);
 %     EEG.chanlocs = struct('labels', { 'Fp1' 'Fp2' 'F3' 'F4' 'C3' 'C4' 'P3' 'P4' 'O1' 'O2' 'A1' 'A2' 'F7' 'F8' 'T7' 'T8' 'P7' 'P8' 'Fz' 'Cz' 'Pz' 'X3'});
-%     EEG = pop_chanedit(EEG, 'load', '22ch.loc'); %add locations
+%     EEG = pop_chanedit(EEG, 'load', '22ch.loc'); % add locations
+%     EEG = pop_resample( EEG, 200); % resample as 200 Hz
+%     EEG = pop_saveset(EEG, 'filename',strcat(subj, '.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
+% 
 %     EEG = pop_saveset( EEG, 'filename',strcat(subj,'.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
 %     [ALLEEG EEG] = eeg_store(ALLEEG, EEG, CURRENTSET);
 % 
-%     fileName = fullfile(strcat(subj, '.set')); %set file
+%     fileName = fullfile(strcat(subj, '.set')); % set file
 % 
 %     %load data
 %     if ~exist('pop_loadset'), eeglab; end
@@ -80,11 +90,12 @@ end
 % 
 %     %new, reformatted set! :D
 %     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 1,'setname','reref','gui','off'); %make a new set out of it i guessss
-%     EEG = pop_saveset( EEG, 'filename',strcat(subj, '_19.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
+%     EEG = pop_saveset(EEG, 'filename', strcat(subj, '_19.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
 % end
 % 
-% function preprocessing(subj)
+% function preprocessing(fileName, subj)
 %     %one subject at a time:
+%     %reformatting(fileName, subj) %first reformat data into event and loc labeled
 %     EEG = pop_loadset('filename',strcat(subj, '_19.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
 %     chanlocs = EEG.chanlocs;
 % 
@@ -108,12 +119,3 @@ end
 % 
 %     EEG = pop_saveset(EEG, 'filename',strcat(subj, '_clean.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
 % end 
-% 
-% function epoch(subj)
-%     [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
-%     EEG = pop_loadset('filename', strcat(subj, '_clean.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
-%     [ALLEEG, EEG, CURRENTSET] = eeg_store( ALLEEG, EEG, 0 );
-%     EEG = pop_epoch( EEG, {  '1'  '2'  '3'  '4'  '5'  }, [0         1.5], 'newname', 'epochs', 'epochinfo', 'yes');
-%     [ALLEEG EEG CURRENTSET] = pop_newset(ALLEEG, EEG, 2,'gui','off');
-%     EEG = pop_saveset(EEG, 'filename',strcat(subj, '_epoched.set'),'filepath','C:\\Users\\Owner\\Documents\\MATLAB\\REU data\\5F EEG data\\');
-% end
