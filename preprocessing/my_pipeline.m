@@ -9,7 +9,7 @@ for i=1:19
     subj = cell2mat(subjList(i));
     % "preprocessing"
     % one subject at a time:
-    EEG = pop_loadset('filename',strcat(subj, '_19.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\'));
+    EEG = pop_loadset('filename',strcat(subj, '_19_noref.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\preprocessing\\'));
     chanlocs = EEG.chanlocs;
     
     %filter data
@@ -31,7 +31,7 @@ for i=1:19
     %Interpolate removed channels
     EEG = pop_interp(EEG, chanlocs);
     
-    EEG = pop_saveset(EEG, 'filename',strcat(subj, '_clean.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\', subj, '\\'));
+    EEG = pop_saveset(EEG, 'filename',strcat(subj, '_clean_noref.set'),'filepath',strcat('C:\\Users\\Owner\\Documents\\MATLAB\\REU_data\\5F_EEG_data\\preprocessing\\'));
 
     % epoching but apparently i can just do it in mne ?
     % [ALLEEG EEG CURRENTSET ALLCOM] = eeglab;
