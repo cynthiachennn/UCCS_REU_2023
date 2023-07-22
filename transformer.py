@@ -67,7 +67,7 @@ class PatchEmbedding(nn.Module):
             nn.Conv2d(40, 40, (19, 1), (1, 1)),
             nn.BatchNorm2d(40),
             nn.ELU(),
-            nn.AvgPool2d((1, 75), (1, 15)),  # pooling acts as slicing to obtain 'patch' along the time dimension as in ViT
+            nn.AvgPool2d((1, 30), (1, 5)),  # pooling acts as slicing to obtain 'patch' along the time dimension as in ViT
             nn.Dropout(0.5),
         )
 
@@ -209,7 +209,7 @@ class ExP():
         self.batch_size = 64
         self.n_epochs = 200
         self.c_dim = 5 # ummm does this refer to classes ? who fking knows lol
-        self.lr = 0.0002
+        self.lr = 0.0001
         self.b1 = 0.5 # wtf do these mean lol :P
         self.b2 = 0.999
         self.dimension = (19, 200) # erm. awesum used to be (190, 50) i changed ? but dunno if that makes sense tbh
@@ -375,7 +375,7 @@ class ExP():
         return (bestAcc, averAcc / num, Y_true, Y_pred)
 
 
-def load_data(affix='_mne_clean'):
+def load_data(affix='_raw'):
     if affix == 'ecog':
         affix = '_raw'
         mneList = []
