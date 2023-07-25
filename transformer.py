@@ -58,21 +58,23 @@ cudnn.deterministic = True
 # Convolution module
 # use conv to capture local features, instead of postion embedding.
 class PatchEmbedding(nn.Module):
-    def __init__(self, emb_size=40):
+    def __init__(self, emb_size=64):
         # self.patch_size = patch_size
         super().__init__()
 
         self.shallownet = nn.Sequential(
-            nn.Conv2d(1, 40, (1, 20), (1, 1)),
-            nn.Conv2d(40, 40, (19, 1), (1, 1)),
-            nn.BatchNorm2d(40),
+            nn.Conv2d(1, 32, (1, 17), (1, 1)),
+            nn.Conv2d(32, 64, (1, 13), (1, 1)),
+            # nn.Conv2d(64, 128, (1, 3), (1, 1)),
+            nn.Conv2d(64, 64, (19, 1), (1, 1)),
+            nn.BatchNorm2d(64),
             nn.ELU(),
             nn.AvgPool2d((1, 30), (1, 5)),  # pooling acts as slicing to obtain 'patch' along the time dimension as in ViT
             nn.Dropout(0.5),
         )
 
         self.projection = nn.Sequential(
-            nn.Conv2d(40, emb_size, (1, 1), stride=(1, 1)),  # transpose, conv could enhance fiting ability slightly
+            nn.Conv2d(64, emb_size, (1, 1), stride=(1, 1)),  # transpose, conv could enhance fiting ability slightly
             Rearrange('b e (h) (w) -> b (h w) e'),
         )
 
@@ -143,7 +145,7 @@ class GELU(nn.Module):
 class TransformerEncoderBlock(nn.Sequential):
     def __init__(self,
                  emb_size,
-                 num_heads=10,
+                 num_heads=16,
                  drop_p=0.5,
                  forward_expansion=4,
                  forward_drop_p=0.5):
@@ -178,12 +180,12 @@ class ClassificationHead(nn.Sequential):
             nn.Linear(emb_size, n_classes)
         )
         self.fc = nn.Sequential(
-            nn.Linear(320, 256),
+            nn.Linear(1856, 256),
             nn.ELU(),
             nn.Dropout(0.5),
             nn.Linear(256, 32),
             nn.ELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.5), # changed from 0.3..
             nn.Linear(32, 5) # i changed this to 5 because 5 classes .. ?
         )
 
@@ -194,7 +196,7 @@ class ClassificationHead(nn.Sequential):
 
 
 class Conformer(nn.Sequential):
-    def __init__(self, emb_size=40, depth=6, n_classes=4, **kwargs):
+    def __init__(self, emb_size=64, depth=8, n_classes=5, **kwargs):
         super().__init__(
 
             PatchEmbedding(emb_size),
@@ -204,16 +206,16 @@ class Conformer(nn.Sequential):
 
 
 class ExP():
-    def __init__(self, subj):
+    def __init__(self):
         super(ExP, self).__init__()
-        self.batch_size = 64
+        self.batch_size = 32
         self.n_epochs = 200
         self.c_dim = 5 # ummm does this refer to classes ? who fking knows lol
         self.lr = 0.0001
         self.b1 = 0.5 # wtf do these mean lol :P
         self.b2 = 0.999
         self.dimension = (19, 200) # erm. awesum used to be (190, 50) i changed ? but dunno if that makes sense tbh
-        self.subj = subj # pass in the name of the subject (?) because each subject gets a diff model :D
+        # self.subj = subj # pass in the name of the subject (?) because each subject gets a diff model :D
 
         self.start_epoch = 0
         self.root = '/Preprocessing/'
@@ -248,10 +250,10 @@ class ExP():
                 for rj in range(8):
                     print(ri, rj)
                     rand_idx = np.random.randint(0, tmp_data.shape[0], 8)
-                    wtf = tmp_data[rand_idx[rj], :, :, rj * 125:(rj + 1) * 125]
+                    wtf = tmp_data[rand_idx[rj], :, :, rj * 25:(rj + 1) * 25]
                     print(wtf.shape)
-                    tmp_aug_data[ri, :, :, rj * 125:(rj + 1) * 125] = tmp_data[rand_idx[rj], :, :,
-                                                                      rj * 125:(rj + 1) * 125]
+                    tmp_aug_data[ri, :, :, rj * 25:(rj + 1) * 25] = tmp_data[rand_idx[rj], :, :,
+                                                                      rj * 25:(rj + 1) * 25]
 
             aug_data.append(tmp_aug_data)
             aug_label.append(tmp_label[:int(self.batch_size / 4)])
@@ -267,12 +269,12 @@ class ExP():
         aug_label = aug_label.long()
         return aug_data, aug_label
 
-    def get_source_data(self, features, labels): # reading the specific subject's data from mneList
+    def get_source_data(self, features, labels, test_size=0.3): # reading the specific subject's data from mneList
         
         features = features.reshape(features.shape[0], 1, features.shape[1], features.shape[2])
 
         # split and shuffle data
-        self.train_data, self.test_data, self.train_label, self.test_label = train_test_split(features, labels, test_size=0.3)
+        self.train_data, self.test_data, self.train_label, self.test_label = train_test_split(features, labels, test_size=test_size)
 
         shuffle_num = np.random.permutation(len(self.train_data))
         self.train_data = self.train_data[shuffle_num, :, :, :]
@@ -288,9 +290,7 @@ class ExP():
         return self.train_data, self.train_label, self.test_data, self.test_label
 
 
-    def train(self, features, labels):
-
-        img, label, test_data, test_label = self.get_source_data(features, labels)
+    def train(self, img, label, test_data, test_label):
 
         img = torch.from_numpy(img) 
         label = torch.from_numpy(label) 
@@ -311,6 +311,7 @@ class ExP():
 
         bestAcc = 0
         averAcc = 0
+        acc = 0
         num = 0
         Y_true = 0
         Y_pred = 0
@@ -321,6 +322,7 @@ class ExP():
 
         for e in range(self.n_epochs):
             # in_epoch = time.time()
+            # print(torch.cuda.memory_summary())
             self.model.train()
             for i, (img, label) in enumerate(self.dataloader):
 
@@ -331,7 +333,6 @@ class ExP():
                 # aug_data, aug_label = self.interaug(self.train_data, self.train_label)
                 # img = torch.cat((img, aug_data))
                 # label = torch.cat((label, aug_label))
-
 
                 tok, outputs = self.model(img)
 
@@ -372,7 +373,7 @@ class ExP():
                     Y_true = test_label
                     Y_pred = y_pred
                     
-        return (bestAcc, averAcc / num, Y_true, Y_pred)
+        return (bestAcc, averAcc / num, acc)
 
 
 def load_data(affix='_raw'):
@@ -389,23 +390,28 @@ def load_data(affix='_raw'):
         for letter in ['A', 'B', 'C', 'E', 'F', 'G', 'H', 'I']:
             features = np.load(f'pickles/subj_{letter}_features{affix}.npy')
             labels = np.load(f'pickles/subj_{letter}_labels{affix}.npy')
+            features = features[:, [0, 1, 10, 2, 16, 3, 11, 12, 4, 17, 5, 13, 14, 6, 18, 7, 15, 8, 9]]
             mneList.append((f'subj_{letter}', features, labels))
         return mneList
     
 
 def main():
-    mneList = load_data('_raw')
+    fileList = load_data('_19_noref')
     faverage = []
     fbest = []
-    for subj, features, labels in mneList:
+    ffinal = []
+    for subj, features, labels in fileList:
+        torch.cuda.empty_cache()
         conformer = ExP(subj)
-        bestAcc, averAcc, Y_true, Y_pred = conformer.train(features, labels)
-        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} *************************************')
+        bestAcc, averAcc, finalAcc = conformer.train(features, labels)
+        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
         faverage.append(averAcc)
         fbest.append(bestAcc)
+        ffinal.append(finalAcc)
     print(f'final average acc: {np.mean(faverage)}')
     print('best accuracies', fbest)
     print('average accuracies', faverage)
+    print('final accuracies', ffinal, 'avg:' , np.mean(ffinal))
     # okay load data
     # model uses self.get_source_data() to pull data from matlab files.
 
@@ -416,12 +422,85 @@ def ecog():
 
     for subj, features, labels in fileList:
         conformer = ExP(subj)
-        bestAcc, averAcc, Y_true, Y_pred = conformer.train(features, labels)
-        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} *************************************')
+        bestAcc, averAcc, finalAcc= conformer.train(features, labels)
+        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
         faverage.append(averAcc)
         fbest.append(bestAcc)
     print(f'final average acc: {np.mean(faverage)}')
     print('best accuracies', fbest)
     print('average accuracies', faverage)
 
-main()
+def rand_transfer(subj_num):
+    fileList = load_data('_19_noref')
+    subj_num = random.randint(0, len(fileList)-1)
+    subj_num = 2
+    test_subj = fileList[subj_num]
+    fileList.remove(test_subj)
+    fileList = ([features for subj, features, labels in fileList], [labels for subj, features, labels in fileList])
+    features = np.concatenate(fileList[0])
+    labels = np.concatenate(fileList[1])
+
+    idx = np.random.permutation(features.shape[0])
+    features, labels = features[idx], labels[idx]
+
+    test_data = test_subj[1]
+    test_label = test_subj[2]
+
+    # train on all subjects except one
+    conformer = ExP()
+    print(test_subj[0])
+
+    features_reshape = features.reshape(features.shape[0], 1, features.shape[1], features.shape[2])
+    test_reshape = test_data.reshape(test_data.shape[0], 1, test_data.shape[1], test_data.shape[2])
+    # print(labels)
+    bestAcc, averAcc, finalAcc = conformer.train(features_reshape, labels, test_reshape, test_label)
+    features, labels, test_data, test_label = conformer.get_source_data(test_data, test_label, 0.8)
+    bestAcc, averAcc, finalAcc = conformer.train(features, labels, test_data, test_label)
+
+    print(f'subj {test_subj[0]} Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
+
+
+def transfer():
+    fileList = load_data('_19_noref')
+    # file = open('log.txt', 'w')
+
+    faverage = []
+    fbest = []
+    ffinal = []
+
+    for subj_num in range(8):
+        test_subj = fileList[subj_num]
+        newFileList = fileList.copy()
+        newFileList.remove(test_subj)
+        newFileList = ([features for subj, features, labels in newFileList], [labels for subj, features, labels in newFileList])
+        features = np.concatenate(newFileList[0])
+        labels = np.concatenate(newFileList[1])
+
+        idx = np.random.permutation(features.shape[0])
+        features, labels = features[idx], labels[idx]
+
+        test_data = test_subj[1]
+        test_label = test_subj[2]
+
+        # train on all subjects except one
+        conformer = ExP()
+        print(test_subj[0])
+
+        features_reshape = features.reshape(features.shape[0], 1, features.shape[1], features.shape[2])
+        test_reshape = test_data.reshape(test_data.shape[0], 1, test_data.shape[1], test_data.shape[2])
+        
+        bestAcc, averAcc, finalAcc = conformer.train(features_reshape, labels, test_reshape, test_label)
+        features, labels, test_data, test_label = conformer.get_source_data(test_data, test_label, 0.8)
+        bestAcc, averAcc, finalAcc = conformer.train(features, labels, test_data, test_label)
+
+        print(f'subj {test_subj[0]} Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
+        faverage.append(averAcc)
+        fbest.append(bestAcc)   
+        ffinal.append(finalAcc)
+
+    print(f'final average acc: {np.mean(faverage)}')
+    print('best accuracies', fbest)
+    print('average accuracies', faverage)
+    print('final accuracies', ffinal, 'avg:' , np.mean(ffinal))
+
+transfer()
