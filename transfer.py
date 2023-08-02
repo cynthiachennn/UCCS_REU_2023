@@ -28,6 +28,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torch.nn.init as init
+from torch.cuda.amp import GradScaler, autocast
 
 from torch.utils.data import Dataset
 from PIL import Image
@@ -144,7 +145,7 @@ class GELU(nn.Module):
 
 class TransformerEncoderBlock(nn.Sequential):
     def __init__(self,
-                 emb_size=64,
+                 emb_size,
                  num_heads=16,
                  drop_p=0.5,
                  forward_expansion=4,
@@ -208,7 +209,8 @@ class Conformer(nn.Sequential):
 class ExP():
     def __init__(self):
         super(ExP, self).__init__()
-        self.batch_size = 16
+        self.batch_size = 4
+        self.gradient_accumulations = 16        
         self.n_epochs = 200
         self.c_dim = 5 # ummm does this refer to classes ? who fking knows lol
         self.lr = 0.0001
@@ -232,6 +234,8 @@ class ExP():
         self.model = Conformer().cuda()
         self.model = nn.DataParallel(self.model, device_ids=[i for i in range(len(gpus))])
         self.model = self.model.cuda()
+
+        self.scaler = GradScaler()
         # summary(self.model, (1, 22, 1000))
 
 
@@ -290,7 +294,7 @@ class ExP():
         return self.train_data, self.train_label, self.test_data, self.test_label
 
 
-    def train(self, img, label, test_data, test_label):
+    def train(self, img, label):
 
         img = torch.from_numpy(img) 
         label = torch.from_numpy(label) 
@@ -298,23 +302,23 @@ class ExP():
         dataset = torch.utils.data.TensorDataset(img, label)
         self.dataloader = torch.utils.data.DataLoader(dataset=dataset, batch_size=self.batch_size, shuffle=True)
 
-        test_data = torch.from_numpy(test_data)
-        test_label = torch.from_numpy(test_label)
-        test_dataset = torch.utils.data.TensorDataset(test_data, test_label)
-        self.test_dataloader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=self.batch_size, shuffle=True)
+        # test_data = torch.from_numpy(test_data)
+        # test_label = torch.from_numpy(test_label)
+        # test_dataset = torch.utils.data.TensorDataset(test_data, test_label)
+        # self.test_dataloader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=self.batch_size, shuffle=True)
 
         # Optimizers
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(self.b1, self.b2))
 
-        test_data = Variable(test_data.type(self.Tensor))
-        test_label = Variable(test_label.type(self.LongTensor))
+        # test_data = Variable(test_data.type(self.Tensor))
+        # test_label = Variable(test_label.type(self.LongTensor))
 
-        bestAcc = 0
-        averAcc = 0
-        acc = 0
-        num = 0
-        Y_true = 0
-        Y_pred = 0
+        # bestAcc = 0
+        # averAcc = 0
+        # acc = 0
+        # num = 0
+        # Y_true = 0
+        # Y_pred = 0
 
         # Train the cnn model
         total_step = len(self.dataloader)
@@ -322,7 +326,6 @@ class ExP():
 
         for e in range(self.n_epochs):
             # in_epoch = time.time()
-            # print(torch.cuda.memory_summary())
             self.model.train()
             for i, (img, label) in enumerate(self.dataloader):
 
@@ -333,47 +336,76 @@ class ExP():
                 # aug_data, aug_label = self.interaug(self.train_data, self.train_label)
                 # img = torch.cat((img, aug_data))
                 # label = torch.cat((label, aug_label))
-
-                tok, outputs = self.model(img)
-
-                loss = self.criterion_cls(outputs, label) 
+                with autocast():
+                    tok, outputs = self.model(img)
+                    loss = self.criterion_cls(outputs, label) 
 
                 self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
 
+                self.scaler.scale(loss/self.gradient_accumulations).backward()
 
+                if (i + 1) % self.gradient_accumulations == 0:
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    self.model.zero_grad()
+            print('Epoch:', e)
+            
+        del img, label
             # out_epoch = time.time()
 
 
             # test process
-            if (e + 1) % 1 == 0:
-                self.model.eval()
-                Tok, Cls = self.model(test_data)
+            # if (e + 1) % 1 == 0:
+            #     self.model.eval()
+            #     Tok, Cls = self.model(test_data)
 
 
-                loss_test = self.criterion_cls(Cls, test_label)
-                y_pred = torch.max(Cls, 1)[1]
-                acc = float((y_pred == test_label).cpu().numpy().astype(int).sum()) / float(test_label.size(0))
-                train_pred = torch.max(outputs, 1)[1]
-                train_acc = float((train_pred == label).cpu().numpy().astype(int).sum()) / float(label.size(0))
+            #     loss_test = self.criterion_cls(Cls, test_label)
+            #     y_pred = torch.max(Cls, 1)[1]
+            #     acc = float((y_pred == test_label).cpu().numpy().astype(int).sum()) / float(test_label.size(0))
+            #     train_pred = torch.max(outputs, 1)[1]
+            #     train_acc = float((train_pred == label).cpu().numpy().astype(int).sum()) / float(label.size(0))
 
-                print('Epoch:', e,
-                      '  Train loss: %.6f' % loss.detach().cpu().numpy(),
-                      '  Test loss: %.6f' % loss_test.detach().cpu().numpy(),
-                      '  Train accuracy %.6f' % train_acc,
-                      '  Test accuracy is %.6f' % acc)
+            #     print('Epoch:', e,
+            #           '  Train loss: %.6f' % loss.detach().cpu().numpy(),
+            #           '  Test loss: %.6f' % loss_test.detach().cpu().numpy(),
+            #           '  Train accuracy %.6f' % train_acc,
+            #           '  Test accuracy is %.6f' % acc)
 
-                # self.log_write.write(str(e) + "    " + str(acc) + "\n")
-                if e > self.n_epochs * 0.75: # record the last few epochs.
-                    num = num + 1
-                    averAcc = averAcc + acc
-                if acc > bestAcc:
-                    bestAcc = acc
-                    Y_true = test_label
-                    Y_pred = y_pred
+            #     # self.log_write.write(str(e) + "    " + str(acc) + "\n")
+            #     if e > self.n_epochs * 0.75: # record the last few epochs.
+            #         num = num + 1
+            #         averAcc = averAcc + acc
+            #     if acc > bestAcc:
+            #         bestAcc = acc
+            #         Y_true = test_label
+            #         Y_pred = y_pred
                     
-        return (bestAcc, averAcc / num, acc)
+        # return (bestAcc, averAcc / num, acc)
+
+    def test(self, test_data, test_label):
+        test_data = torch.from_numpy(test_data)
+        test_label = torch.from_numpy(test_label)
+        test_dataset = torch.utils.data.TensorDataset(test_data, test_label)
+        self.test_dataloader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=self.batch_size, shuffle=True)
+
+        test_data = Variable(test_data.type(self.Tensor))
+        test_label = Variable(test_label.type(self.LongTensor))
+
+        acc = 0
+
+        self.model.eval()
+        with torch.no_grad():
+            Tok, Cls = self.model(test_data)
+            loss_test = self.criterion_cls(Cls, test_label)
+            y_pred = torch.max(Cls, 1)[1]
+
+            acc = float((y_pred == test_label).cpu().numpy().astype(int).sum()) / float(test_label.size(0))
+
+        print('  Test loss: %.6f' % loss_test.detach().cpu().numpy(),
+              '  Test accuracy is %.6f' % acc)
+
+        return acc
 
 
 def load_data(affix='_raw'):
@@ -393,96 +425,28 @@ def load_data(affix='_raw'):
             features = features[:, [0, 1, 10, 2, 16, 3, 11, 12, 4, 17, 5, 13, 14, 6, 18, 7, 15, 8, 9]]
             mneList.append((f'subj_{letter}', features, labels))
         return mneList
-    
-
-def main():
-    fileList = load_data('_19_noref')
-    faverage = []
-    fbest = []
-    ffinal = []
-    for subj, features, labels in fileList:
-        torch.cuda.empty_cache()
-        conformer = ExP(subj)
-        bestAcc, averAcc, finalAcc = conformer.train(features, labels)
-        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
-        faverage.append(averAcc)
-        fbest.append(bestAcc)
-        ffinal.append(finalAcc)
-    print(f'final average acc: {np.mean(faverage)}')
-    print('best accuracies', fbest)
-    print('average accuracies', faverage)
-    print('final accuracies', ffinal, 'avg:' , np.mean(ffinal))
-    # okay load data
-    # model uses self.get_source_data() to pull data from matlab files.
-
-def ecog():
-    fileList = load_data(affix='ecog')
-    faverage = []
-    fbest = []
-
-    for subj, features, labels in fileList:
-        conformer = ExP(subj)
-        bestAcc, averAcc, finalAcc= conformer.train(features, labels)
-        print(f'{subj}: Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
-        faverage.append(averAcc)
-        fbest.append(bestAcc)
-    print(f'final average acc: {np.mean(faverage)}')
-    print('best accuracies', fbest)
-    print('average accuracies', faverage)
-
-def rand_transfer(subj_num):
-    fileList = load_data('_raw')
-    subj_num = random.randint(0, len(fileList)-1)
-    subj_num = 2
-    test_subj = fileList[subj_num]
-    fileList.remove(test_subj)
-    fileList = ([features for subj, features, labels in fileList], [labels for subj, features, labels in fileList])
-    features = np.concatenate(fileList[0])
-    labels = np.concatenate(fileList[1])
-
-    idx = np.random.permutation(features.shape[0])
-    features, labels = features[idx], labels[idx]
-
-    test_data = test_subj[1]
-    test_label = test_subj[2]
-
-    # train on all subjects except one
-    conformer = ExP()
-    print(test_subj[0])
-
-    features_reshape = features.reshape(features.shape[0], 1, features.shape[1], features.shape[2])
-    test_reshape = test_data.reshape(test_data.shape[0], 1, test_data.shape[1], test_data.shape[2])
-    # print(labels)
-    bestAcc, averAcc, finalAcc = conformer.train(features_reshape, labels, test_reshape, test_label)
-    features, labels, test_data, test_label = conformer.get_source_data(test_data, test_label, 0.8)
-    bestAcc, averAcc, finalAcc = conformer.train(features, labels, test_data, test_label)
-
-    print(f'subj {test_subj[0]} Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
-
 
 def transfer():
     fileList = load_data('_raw')
+    fileName = 'log_7_31.txt'
     # file = open('log.txt', 'w')
 
-    faverage = []
-    fbest = []
-    ffinal = []
+    facc = []
 
-    for subj_num in range(1, 8):
+    for subj_num in range(7,8):
         torch.cuda.empty_cache()
+
         test_subj = fileList[subj_num]
         newFileList = fileList.copy()
         newFileList.remove(test_subj)
         newFileList = ([features for subj, features, labels in newFileList], [labels for subj, features, labels in newFileList])
         features = np.concatenate(newFileList[0])
         labels = np.concatenate(newFileList[1])
-
-        idx = np.random.permutation(features.shape[0])[0:10000]
-        features, labels = features[idx], labels[idx][0:10000]
-
+        idx = np.random.permutation(features.shape[0])
+        features, labels = features[idx], labels[idx]
         test_data = test_subj[1]
         test_label = test_subj[2]
-
+        
         # train on all subjects except one
         conformer = ExP()
         print(test_subj[0])
@@ -490,18 +454,17 @@ def transfer():
         features_reshape = features.reshape(features.shape[0], 1, features.shape[1], features.shape[2])
         test_reshape = test_data.reshape(test_data.shape[0], 1, test_data.shape[1], test_data.shape[2])
         
-        bestAcc, averAcc, finalAcc = conformer.train(features_reshape, labels, test_reshape, test_label)
-        features, labels, test_data, test_label = conformer.get_source_data(test_data, test_label, 0.8)
-        bestAcc, averAcc, finalAcc = conformer.train(features, labels, test_data, test_label)
-
-        print(f'subj {test_subj[0]} Best Acc: {bestAcc} Average acc: {averAcc} Final acc: {finalAcc} *************************************')
-        faverage.append(averAcc)
-        fbest.append(bestAcc)   
-        ffinal.append(finalAcc)
-
-    print(f'final average acc: {np.mean(faverage)}')
-    print('best accuracies', fbest)
-    print('average accuracies', faverage)
-    print('final accuracies', ffinal, 'avg:' , np.mean(ffinal))
+        conformer.train(features_reshape, labels)
+        acc = conformer.test(test_reshape, test_label)
+        with open(fileName, 'a') as f:
+            f.write(f'acc after training on all subjects {acc}\n')
+        features, labels, test_data, test_label = conformer.get_source_data(test_data, test_label, 0.7)
+        conformer.train(features, labels)
+        acc = conformer.test(test_data, test_label)
+        with open(fileName, 'a') as f:
+            f.write(f'acc after fine tuning on 30% {acc}\n')
+        facc.append(acc)
+    with open(fileName, 'a') as f:
+        f.write(f'final accuracies after fine tuning on 30%: {facc}\n')
 
 transfer()
